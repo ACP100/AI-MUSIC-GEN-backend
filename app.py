@@ -101,23 +101,31 @@ class MusicGenerator:
         return {"status": "success", "step": "emotion_tokens_combined"}
     
     def feed_transformer(self, data, session_id):
-        """Step 5: Feed to transformer model (Mock for now)"""
-        # Read combined emotion and tokens
-        with open(f'temp_files/emotion_tokens_{session_id}.txt', 'r', encoding='utf-8') as f:
-            emotion_tokens = f.read()
-        
-        # This is where you'll integrate with your actual transformer model
-        # For demo, using the example output you provided but incorporating actual emotion
-        emotion = data.get('emotion', 'sadness')  # From previous step
-        confidence = data.get('confidence', 1.00)
-        
-        demo_output = f"Emotion: {emotion} Confidence: {confidence:.2f} [GENRE_JAZZ] [KEY_C_MAJOR] [INSTRUMENT_BRASS_MISC] [INSTRUMENT_BRASS_SECTION] [INSTRUMENT_PERC_TONAL] [TEMPO_FAST] Bar_None TimeSig_4/4 Position_0 Tempo_134.84 Program_58 Pitch_40 Velocity_95 Duration_0.3.8 Program_11 Pitch_67 Velocity_107 Duration_1.0.8 Position_4 Program_58 Pitch_40 Velocity_91 Duration_0.3.8 Position_8 Pitch_40 Velocity_91 Duration_0.3.8 Program_11 Pitch_72 Velocity_95 Duration_0.5.8"
-        
-        # Save transformer output
-        with open(f'temp_files/transformer_output_{session_id}.txt', 'w', encoding='utf-8') as f:
-            f.write(demo_output)
-        
-        return {"status": "success", "step": "transformer_fed", "output_sample": demo_output[:100] + "..."}
+    # Read combined emotion and tokens
+      with open(f'temp_files/emotion_tokens_{session_id}.txt', 'r', encoding='utf-8') as f:
+        emotion_tokens = f.read()
+    
+    # This is where you'll integrate with your actual transformer model
+    # For demo, using the example output you provided but incorporating actual emotion
+      emotion = data.get('emotion', 'sadness')  # From previous step
+      confidence = data.get('confidence', 1.00)
+    
+    # Better mock output with proper REMI tokens
+      demo_output = f"""
+    Emotion: {emotion} Confidence: {confidence:.2f}
+    [GENRE_JAZZ] [KEY_C_MINOR] [INSTRUMENT_PIANO] [INSTRUMENT_SAXOPHONE] [INSTRUMENT_BASS] [TEMPO_SLOW]
+    Bar_Start TimeSig_4/4 Position_0 Tempo_80.0 
+    Program_0 Pitch_60 Velocity_80 Duration_1.0
+    Position_480 Program_0 Pitch_64 Velocity_75 Duration_1.0
+    Position_960 Program_0 Pitch_67 Velocity_70 Duration_1.0
+    Bar_End
+    """
+    
+    # Save transformer output
+      with open(f'temp_files/transformer_output_{session_id}.txt', 'w', encoding='utf-8') as f:
+          f.write(demo_output)
+    
+      return {"status": "success", "step": "transformer_fed", "output_sample": demo_output[:100] + "..."}
     
     def process_transformer_output(self, data, session_id):
         """Step 6: Process transformer output and convert to REMI"""
@@ -196,15 +204,23 @@ def generate_music():
         
         # Return final result with download links
         final_result = {
-            'session_id': session_id,
-            'status': 'completed',
-            'steps': [r.get('step', 'unknown') for r in results],
-            'emotion': results[2].get('emotion', 'unknown'),
-            'confidence': results[2].get('confidence', 0),
-            'downloads': {
-                'midi': f'/download/midi/{session_id}',
-                'audio': f'/download/audio/{session_id}'
-            }
+            # Return final result with download and playback links
+
+    'session_id': session_id,
+    'status': 'completed',
+    'steps': [r.get('step', 'unknown') for r in results],
+    'emotion': results[2].get('emotion', 'unknown'),
+    'confidence': results[2].get('confidence', 0),
+    'downloads': {
+        'midi': f'/download/midi/{session_id}',
+        'audio': f'/download/audio/{session_id}'
+    },
+    # ADD THESE FOR FRONTEND PLAYBACK
+    'playback': {
+        'midi': f'/play/midi/{session_id}',
+        'audio': f'/play/audio/{session_id}'
+    
+}
         }
         
         return jsonify(final_result)
@@ -227,6 +243,23 @@ def download_audio(session_id):
         return send_file(audio_path, as_attachment=True, download_name=f'music_{session_id}.wav')
     else:
         return jsonify({'error': 'Audio file not found'}), 404
+
+# NEW: Add endpoints for direct audio playback (not as attachment)
+@app.route('/play/audio/<session_id>', methods=['GET'])
+def play_audio(session_id):
+    audio_path = f'output/audio/output_{session_id}.wav'
+    if os.path.exists(audio_path):
+        return send_file(audio_path, as_attachment=False, mimetype='audio/wav')
+    else:
+        return jsonify({'error': 'Audio file not found'}), 404
+
+@app.route('/play/midi/<session_id>', methods=['GET'])
+def play_midi(session_id):
+    midi_path = f'output/midi/output_{session_id}.mid'
+    if os.path.exists(midi_path):
+        return send_file(midi_path, as_attachment=False, mimetype='audio/midi')
+    else:
+        return jsonify({'error': 'MIDI file not found'}), 404
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
