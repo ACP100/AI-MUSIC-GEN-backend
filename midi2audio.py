@@ -1,70 +1,94 @@
 import os
 import subprocess
+import wave
+import struct
 
-def convert_midi_to_audio(midi_path, audio_output_path):
+
+def convert_midi_to_audio(midi_path, audio_output_path, use_fallback=True):
     """
-    Convert MIDI to audio using FluidSynth
+    Convert MIDI to audio using FluidSynth.
+    If FluidSynth or SoundFont is missing, optionally fallback to generating 1 second of silence.
     """
-    try:
-        # You'll need to specify the path to your SoundFont file
-        soundfont_path = "/usr/share/sounds/sf2/FluidR3_GM.sf2"  # Default path on many systems
-        
-        # If the default path doesn't exist, try to find it
-        if not os.path.exists(soundfont_path):
-            # Common alternative paths
-            alternative_paths = [
-                "/usr/share/soundfonts/FluidR3_GM.sf2",
-                "/usr/share/sounds/sf2/default.sf2",
-                "./FluidR3_GM.sf2"  # Current directory
-            ]
-            
-            for path in alternative_paths:
-                if os.path.exists(path):
-                    soundfont_path = path
-                    break
-            else:
-                # If no SoundFont found, create a mock WAV file
-                create_mock_audio(audio_output_path)
-                return True
-        
-        # Convert using FluidSynth
-        command = [
-            'fluidsynth', 
-            '-ni', 
-            soundfont_path, 
-            midi_path, 
-            '-F', audio_output_path, 
-            '-r', '44100'
-        ]
-        
-        result = subprocess.run(command, capture_output=True, text=True)
-        
-        if result.returncode != 0:
-            print(f"FluidSynth error: {result.stderr}")
-            # Fallback to mock audio
+
+    # --- 1. Locate SoundFont ----------------------------------------------------
+    soundfont_candidates = [
+        "/usr/share/sounds/sf2/FluidR3_GM.sf2",
+        "/usr/share/soundfonts/FluidR3_GM.sf2",
+        "/usr/share/sounds/sf2/default.sf2",
+        # "./FluidR3_GM.sf2",
+        "./GeneralUser-GS.sf2"
+    ]
+
+    soundfont_path = next((p for p in soundfont_candidates if os.path.exists(p)), None)
+
+    if soundfont_path is None:
+        print("❌ No SoundFont (.sf2) found on your system.")
+        if use_fallback:
+            print("⚠️ Using fallback silent audio.")
             create_mock_audio(audio_output_path)
-        
-        return True
-    
-    except Exception as e:
-        print(f"Error converting MIDI to audio: {e}")
-        # Fallback to mock audio
-        create_mock_audio(audio_output_path)
-        return True
+            return False
+        else:
+            raise FileNotFoundError("No SoundFont found for FluidSynth")
+
+    # --- 2. Build correct FluidSynth command (ORDER MATTERS) --------------------
+    command = [
+        "fluidsynth",
+        "-F", audio_output_path,      # output WAV
+        "-ni",                        # no interactive shell
+        soundfont_path,               # soundfont
+        midi_path,                    # input MIDI
+        "-r", "44100"                 # sample rate
+    ]
+
+    print("🎵 Running FluidSynth:")
+    print(" ".join(command))
+
+    # --- 3. Execute FluidSynth --------------------------------------------------
+    result = subprocess.run(command, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print("❌ FluidSynth Error:")
+        print(result.stderr)
+
+        if use_fallback:
+            print("⚠️ Falling back to 1-second silent audio.")
+            create_mock_audio(audio_output_path)
+            return False
+        else:
+            raise RuntimeError("FluidSynth failed: " + result.stderr)
+
+    # --- 4. Verify output -------------------------------------------------------
+    if not os.path.exists(audio_output_path) or os.path.getsize(audio_output_path) < 2000:
+        print("❌ FluidSynth produced an empty or invalid file.")
+        if use_fallback:
+            print("⚠️ Using fallback silent audio.")
+            create_mock_audio(audio_output_path)
+            return False
+        else:
+            raise RuntimeError("FluidSynth output file too small")
+
+    print("✅ Audio conversion complete:", audio_output_path)
+    return True
+
+
+
+# -----------------------------------------------------------------------------
+# FALLBACK: Create 1-second silent WAV (only used if conversion fails)
+# -----------------------------------------------------------------------------
 
 def create_mock_audio(output_path):
-    """Create a mock audio file for demo purposes"""
-    # Create a simple WAV file with silence
-    import wave
-    import struct
-    
-    # Create a silent audio file (1 second of silence)
-    with wave.open(output_path, 'w') as wav_file:
-        wav_file.setnchannels(1)  # Mono
-        wav_file.setsampwidth(2)  # 2 bytes per sample
-        wav_file.setframerate(44100)  # Sample rate
-        wav_file.setnframes(44100)  # 1 second
-        
-        # Write silent frames
+    """
+    Create a silent 1-second WAV audio file.
+    Used only when FluidSynth fails.
+    """
+    with wave.open(output_path, 'w') as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(44100)
+        wav.setnframes(44100)
+
+        silence_frame = struct.pack("<h", 0)
         for _ in range(44100):
-            wav_file.writeframes(struct.pack('<h', 0))
+            wav.writeframes(silence_frame)
+
+    print(f"🟡 Created mock audio (1 sec): {output_path}")
