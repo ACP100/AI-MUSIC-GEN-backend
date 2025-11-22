@@ -163,7 +163,26 @@ class MusicGenerator:
         except Exception as e:
             return {"status": "error", "step": "audio_conversion_failed", "error": str(e)}
 
+    def cleanup_temp_files(self, session_id):
+        """ Remove temporary session files created in temp_files/ for the given session_id. """
+        filenames = [
+            f'temp_files/lyrics_{session_id}.txt',
+            f'temp_files/tokens_{session_id}.txt',
+            f'temp_files/emotion_{session_id}.txt',
+            f'temp_files/emotion_tokens_{session_id}.txt',
+            f'temp_files/transformer_output_{session_id}.txt',
+            f'temp_files/remi_{session_id}.txt',
+        ]
+        for fp in filenames:
+            try:
+                if os.path.exists(fp):
+                    os.remove(fp)
+            except Exception as e:
+                # Keep this simple: print a short notice (won't interrupt cleanup)
+                print(f"Warning: failed to remove {fp}: {e}")
+
 @app.route('/generate-music', methods=['POST'])
+
 def generate_music():
     try:
         data = request.json
@@ -180,50 +199,64 @@ def generate_music():
         # Initialize music generator
         generator = MusicGenerator()
         
+        # Decide whether to auto-clean temp files (default: True). Frontend may pass {"cleanup": False}.
+        auto_cleanup = data.get('cleanup', True)
+        
         # Execute workflow steps
         results = []
         current_data = data
-        
-        for step in generator.workflow_steps:
-            try:
-                result = step(current_data, session_id)
-                results.append(result)
-                if result['status'] == 'error':
+
+        try:
+            for step in generator.workflow_steps:
+                try:
+                    result = step(current_data, session_id)
+                    results.append(result)
+                    if result['status'] == 'error':
+                        return jsonify({
+                            'error': f'Step failed: {step.__name__}',
+                            'details': result.get('error', 'Unknown error'),
+                            'completed_steps': results
+                        }), 500
+                    current_data.update(result)  # Merge results for next steps
+                except Exception as e:
                     return jsonify({
                         'error': f'Step failed: {step.__name__}',
-                        'details': result.get('error', 'Unknown error'),
+                        'details': str(e),
                         'completed_steps': results
                     }), 500
-                current_data.update(result)  # Merge results for next steps
-            except Exception as e:
-                return jsonify({
-                    'error': f'Step failed: {step.__name__}',
-                    'details': str(e),
-                    'completed_steps': results
-                }), 500
-        
-        # Return final result with download links
-        final_result = {
-            # Return final result with download and playback links
+            
+            # Return final result with download links
+            final_result = {
+                # Return final result with download and playback links
 
-    'session_id': session_id,
-    'status': 'completed',
-    'steps': [r.get('step', 'unknown') for r in results],
-    'emotion': results[2].get('emotion', 'unknown'),
-    'confidence': results[2].get('confidence', 0),
-    'downloads': {
-        'midi': f'/download/midi/{session_id}',
-        'audio': f'/download/audio/{session_id}'
-    },
-    # ADD THESE FOR FRONTEND PLAYBACK
-    'playback': {
-        'midi': f'/play/midi/{session_id}',
-        'audio': f'/play/audio/{session_id}'
-    
-}
-        }
+        'session_id': session_id,
+        'status': 'completed',
+        'steps': [r.get('step', 'unknown') for r in results],
+        'emotion': results[2].get('emotion', 'unknown'),
+        'confidence': results[2].get('confidence', 0),
+        'downloads': {
+            'midi': f'/download/midi/{session_id}',
+            'audio': f'/download/audio/{session_id}'
+        },
+        # ADD THESE FOR FRONTEND PLAYBACK
+        'playback': {
+            'midi': f'/play/midi/{session_id}',
+            'audio': f'/play/audio/{session_id}'
         
-        return jsonify(final_result)
+        }
+            }
+            
+            return jsonify(final_result)
+        finally:
+            # Auto-clean temporary session files unless disabled by the client
+            try:
+                if auto_cleanup:
+                    generator.cleanup_temp_files(session_id)
+                    print(f"Temp files for session {session_id} cleaned up.")
+                else:
+                    print(f"Temp files for session {session_id} preserved (cleanup disabled).")
+            except Exception as e:
+                print(f"Error during cleanup for session {session_id}: {e}")
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
