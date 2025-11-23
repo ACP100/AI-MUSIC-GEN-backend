@@ -36,7 +36,7 @@ class MusicGenerator:
         lyrics = data['lyrics']
         with open(f'temp_files/lyrics_{session_id}.txt', 'w', encoding='utf-8') as f:
             f.write(lyrics)
-        return {"status": "success", "step": "lyrics_saved"}
+        return {"step": "lyrics_saved"}
     
     def extract_input_tokens(self, data, session_id):
         """Step 2: Extract tokens from input"""
@@ -56,7 +56,7 @@ class MusicGenerator:
                 else:
                     f.write(f"[{key}_{value.upper()}]\n")
         
-        return {"status": "success", "step": "tokens_extracted", "tokens": tokens}
+        return {"step": "tokens_extracted"}
     
     def extract_emotion(self, data, session_id):
         """Step 3: Extract emotion from lyrics using your emotion detection"""
@@ -76,8 +76,7 @@ class MusicGenerator:
             f.write(f"Emotion: {emotion} Confidence: {confidence:.2f}")
         
         return {
-            "status": "success", 
-            "step": "emotion_extracted", 
+            "step": "emotion_extracted",
             "emotion": emotion,
             "confidence": confidence
         }
@@ -98,20 +97,21 @@ class MusicGenerator:
         with open(f'temp_files/emotion_tokens_{session_id}.txt', 'w', encoding='utf-8') as f:
             f.write(combined_content)
         
-        return {"status": "success", "step": "emotion_tokens_combined"}
+        return {"step": "emotion_tokens_combined"}
     
     def feed_transformer(self, data, session_id):
-    # Read combined emotion and tokens
-      with open(f'temp_files/emotion_tokens_{session_id}.txt', 'r', encoding='utf-8') as f:
-        emotion_tokens = f.read()
-    
-    # This is where you'll integrate with your actual transformer model
-    # For demo, using the example output you provided but incorporating actual emotion
-      emotion = data.get('emotion', 'sadness')  # From previous step
-      confidence = data.get('confidence', 1.00)
-    
-    # Better mock output with proper REMI tokens
-      demo_output = f"""
+        """Step 5: Feed to transformer"""
+        # Read combined emotion and tokens
+        with open(f'temp_files/emotion_tokens_{session_id}.txt', 'r', encoding='utf-8') as f:
+            emotion_tokens = f.read()
+        
+        # This is where you'll integrate with your actual transformer model
+        # For demo, using the example output you provided but incorporating actual emotion
+        emotion = data.get('emotion', 'sadness')  # From previous step
+        confidence = data.get('confidence', 1.00)
+        
+        # Better mock output with proper REMI tokens
+        demo_output = f"""
     Emotion: {emotion} Confidence: {confidence:.2f}
     [GENRE_JAZZ] [KEY_C_MINOR] [INSTRUMENT_PIANO] [INSTRUMENT_SAXOPHONE] [INSTRUMENT_BASS] [TEMPO_SLOW]
     Bar_Start TimeSig_4/4 Position_0 Tempo_80.0 
@@ -120,12 +120,12 @@ class MusicGenerator:
     Position_960 Program_0 Pitch_67 Velocity_70 Duration_1.0
     Bar_End
     """
-    
-    # Save transformer output
-      with open(f'temp_files/transformer_output_{session_id}.txt', 'w', encoding='utf-8') as f:
-          f.write(demo_output)
-    
-      return {"status": "success", "step": "transformer_fed", "output_sample": demo_output[:100] + "..."}
+        
+        # Save transformer output
+        with open(f'temp_files/transformer_output_{session_id}.txt', 'w', encoding='utf-8') as f:
+            f.write(demo_output)
+        
+        return {"step": "transformer_fed"}
     
     def process_transformer_output(self, data, session_id):
         """Step 6: Process transformer output and convert to REMI"""
@@ -139,7 +139,7 @@ class MusicGenerator:
         with open(f'temp_files/remi_{session_id}.txt', 'w', encoding='utf-8') as f:
             f.write(remi_tokens)
         
-        return {"status": "success", "step": "remi_converted", "remi_sample": remi_tokens[:100] + "..."}
+        return {"step": "remi_converted"}
     
     def convert_to_midi(self, data, session_id):
         """Step 7: Convert REMI to MIDI using your r1_remi2midi.py"""
@@ -148,9 +148,9 @@ class MusicGenerator:
         
         try:
             convert_remi_to_midi(remi_path, midi_path)
-            return {"status": "success", "step": "midi_created", "midi_path": midi_path}
+            return {"step": "midi_created"}
         except Exception as e:
-            return {"status": "error", "step": "midi_conversion_failed", "error": str(e)}
+            return {"step": "midi_conversion_failed", "error": str(e)}
     
     def convert_to_audio(self, data, session_id):
         """Step 8: Convert MIDI to audio"""
@@ -159,9 +159,9 @@ class MusicGenerator:
         
         try:
             convert_midi_to_audio(midi_path, audio_path)
-            return {"status": "success", "step": "audio_created", "audio_path": audio_path}
+            return {"step": "audio_created"}
         except Exception as e:
-            return {"status": "error", "step": "audio_conversion_failed", "error": str(e)}
+            return {"step": "audio_conversion_failed", "error": str(e)}
 
     def cleanup_temp_files(self, session_id):
         """ Remove temporary session files created in temp_files/ for the given session_id. """
@@ -182,7 +182,6 @@ class MusicGenerator:
                 print(f"Warning: failed to remove {fp}: {e}")
 
 @app.route('/generate-music', methods=['POST'])
-
 def generate_music():
     try:
         data = request.json
@@ -203,47 +202,51 @@ def generate_music():
         auto_cleanup = data.get('cleanup', True)
         
         # Execute workflow steps
-        results = []
-        current_data = data
+        steps = []
+        emotion = "sadness"
+        confidence = 1.0
 
         try:
             for step in generator.workflow_steps:
                 try:
-                    result = step(current_data, session_id)
-                    results.append(result)
-                    if result['status'] == 'error':
+                    result = step(data, session_id)
+                    step_name = result.get('step', 'unknown')
+                    steps.append(step_name)
+                    
+                    # Check for errors
+                    if 'error' in result:
                         return jsonify({
                             'error': f'Step failed: {step.__name__}',
-                            'details': result.get('error', 'Unknown error'),
-                            'completed_steps': results
+                            'details': result.get('error', 'Unknown error')
                         }), 500
-                    current_data.update(result)  # Merge results for next steps
+                    
+                    # Store emotion and confidence from emotion extraction step
+                    if step_name == "emotion_extracted":
+                        emotion = result.get('emotion', 'sadness')
+                        confidence = result.get('confidence', 1.0)
+                        
+                    data.update(result)  # Merge results for next steps
                 except Exception as e:
                     return jsonify({
                         'error': f'Step failed: {step.__name__}',
-                        'details': str(e),
-                        'completed_steps': results
+                        'details': str(e)
                     }), 500
             
-            # Return final result with download links
+            # Return final result in the specified format
             final_result = {
-                # Return final result with download and playback links
-
-        'session_id': session_id,
-        'status': 'completed',
-        'steps': [r.get('step', 'unknown') for r in results],
-        'emotion': results[2].get('emotion', 'unknown'),
-        'confidence': results[2].get('confidence', 0),
-        'downloads': {
-            'midi': f'/download/midi/{session_id}',
-            'audio': f'/download/audio/{session_id}'
-        },
-        # ADD THESE FOR FRONTEND PLAYBACK
-        'playback': {
-            'midi': f'/play/midi/{session_id}',
-            'audio': f'/play/audio/{session_id}'
-        
-        }
+                'session_id': session_id,
+                'status': 'completed',
+                'steps': steps,
+                'emotion': emotion,
+                'confidence': confidence,
+                'downloads': {
+                    'midi': f'/download/midi/{session_id}',
+                    'audio': f'/download/audio/{session_id}'
+                },
+                'playback': {
+                    'midi': f'/play/midi/{session_id}',
+                    'audio': f'/play/audio/{session_id}'
+                }
             }
             
             return jsonify(final_result)
@@ -293,6 +296,79 @@ def play_midi(session_id):
         return send_file(midi_path, as_attachment=False, mimetype='audio/midi')
     else:
         return jsonify({'error': 'MIDI file not found'}), 404
+    
+# For testing purpose only 
+def test_remi_conversion():
+    """Test the REMI conversion with your actual file"""
+    try:
+        print("🚀 Starting manual REMI conversion test...")
+        
+        # Create a test session ID
+        session_id = "test_session_123"
+        
+        # Make sure your remi.txt file is in the same directory as app.py
+        remi_source_file = "remi2tst/ed.txt"
+        
+        if not os.path.exists(remi_source_file):
+            print(f"❌ REMI file not found: {remi_source_file}")
+            print("Please make sure 'remi.txt' is in the same folder as app.py")
+            return False
+        
+        # Copy your remi.txt to the expected temp location
+        import shutil
+        temp_remi_path = f"temp_files/remi_{session_id}.txt"
+        shutil.copy(remi_source_file, temp_remi_path)
+        print(f"✅ Copied REMI file to: {temp_remi_path}")
+        
+        # Test the conversion steps that your backend uses
+        from remi2midi import convert_remi_to_midi
+        from midi2audio import convert_midi_to_audio
+        
+        midi_path = f"output/midi/output_{session_id}.mid"
+        audio_path = f"output/audio/output_{session_id}.wav"
+        
+        print("\n🎵 Testing REMI to MIDI conversion...")
+        success = convert_remi_to_midi(temp_remi_path, midi_path)
+        
+        if success and os.path.exists(midi_path):
+            midi_size = os.path.getsize(midi_path)
+            print(f"✅ MIDI conversion successful!")
+            print(f"📁 MIDI file: {midi_path}")
+            print(f"📊 File size: {midi_size} bytes")
+        else:
+            print("❌ MIDI conversion failed")
+            return False
+        
+        print("\n🔊 Testing MIDI to Audio conversion...")
+        convert_midi_to_audio(midi_path, audio_path)
+        
+        if os.path.exists(audio_path):
+            audio_size = os.path.getsize(audio_path)
+            print(f"✅ Audio conversion successful!")
+            print(f"📁 Audio file: {audio_path}")
+            print(f"📊 File size: {audio_size} bytes")
+            
+            # Test playback endpoints
+            print(f"\n🎮 Test playback URLs:")
+            print(f"   MIDI: http://localhost:5000/play/midi/{session_id}")
+            print(f"   Audio: http://localhost:5000/play/audio/{session_id}")
+            print(f"   Download MIDI: http://localhost:5000/download/midi/{session_id}")
+            print(f"   Download Audio: http://localhost:5000/download/audio/{session_id}")
+        else:
+            print("❌ Audio conversion failed")
+            return False
+        
+        print("\n🎉 All conversions successful! Your REMI file works with the backend!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error during test: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    
+# test_remi_conversion()
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
