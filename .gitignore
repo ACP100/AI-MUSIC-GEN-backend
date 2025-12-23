@@ -8,5 +8,22 @@ remi.txt
 FluidR3_GM.sf2
 /backups
 /remi2tst
+notes.md
+/MIDI Files
+/done
+inference.ipynb
+generated_music_fixed.txt
+extend.py
+test_integration.py
+inference_output.txt
+Arachno.sf2
+vocab.json
+/__pycache__
 
-
+temp_files/transformer_output_e9f374e1-6e6f-4a56-a7b9-657c992a7bac.txt
+temp_files/emotion_e9f374e1-6e6f-4a56-a7b9-657c992a7bac.txt
+temp_files/emotion_tokens_e9f374e1-6e6f-4a56-a7b9-657c992a7bac.txt
+temp_files/lyrics_e9f374e1-6e6f-4a56-a7b9-657c992a7bac.txt
+temp_files/remi_e9f374e1-6e6f-4a56-a7b9-657c992a7bac.txt
+temp_files/tokens_e9f374e1-6e6f-4a56-a7b9-657c992a7bac.txt
+temp_files/transformer_output_e9f374e1-6e6f-4a56-a7b9-657c992a7bac.txt

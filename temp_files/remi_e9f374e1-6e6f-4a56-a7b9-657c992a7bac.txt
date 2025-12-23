@@ -1,1 +1,0 @@
-Bar_None TimeSig_4/4 Position_0 Tempo_134.84 Program_58 Pitch_40 Velocity_95 Duration_0.3.8 Program_11 Pitch_67 Velocity_107 Duration_1.0.8 Position_4 Program_58 Pitch_40 Velocity_91 Duration_0.3.8 Position_8 Pitch_40 Velocity_91 Duration_0.3.8 Program_11 Pitch_72 Velocity_95 Duration_0.5.8

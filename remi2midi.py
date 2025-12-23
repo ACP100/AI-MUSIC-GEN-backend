@@ -56,38 +56,38 @@ def convert_remi_to_midi(input_txt_path: str, output_midi_path: str):
         
         # Split tokens and clean them
         tokens = content.split()
-        print(f"🔧 Raw tokens count: {len(tokens)}")
-        print(f"🔧 Sample tokens: {tokens[:10]}")  # Debug: show first 10 tokens
+        print(f"Raw tokens count: {len(tokens)}")
+        print(f"Sample tokens: {tokens[:10]}")  # Debug: show first 10 tokens
         
         # Clean and validate tokens
         cleaned_tokens = clean_remi_tokens(tokens)
-        print(f"🔧 Cleaned tokens count: {len(cleaned_tokens)}")
-        print(f"🔧 Sample cleaned tokens: {cleaned_tokens[:10]}")  # Debug
+        print(f"Cleaned tokens count: {len(cleaned_tokens)}")
+        print(f"Sample cleaned tokens: {cleaned_tokens[:10]}")  # Debug
         
         if not cleaned_tokens:
             raise ValueError("No valid REMI tokens found after cleaning")
         
         # Convert to MIDI
-        print("🔄 Converting tokens to MIDI...")
+        print("Converting tokens to MIDI...")
         midi_obj = tokenizer.tokens_to_midi(cleaned_tokens)
         midi_obj.dump_midi(output_midi_path)
-        print(f"✅ MIDI saved: {output_midi_path}")
+        print(f"MIDI saved: {output_midi_path}")
         return True
         
     except Exception as e:
-        print(f"❌ Error converting REMI to MIDI: {e}")
-        print(f"📄 File content preview: {content[:200] if 'content' in locals() else 'No content'}")
+        print(f"Error converting REMI to MIDI: {e}")
+        print(f"File content preview: {content[:200] if 'content' in locals() else 'No content'}")
         
         # Try fallback instead of raising
-        print("🔄 Attempting fallback MIDI creation...")
+        print("Attempting fallback MIDI creation...")
         if create_simple_midi_fallback(output_midi_path):
             return True
         else:
             raise
         
     except Exception as e:
-        print(f"❌ Error converting REMI to MIDI: {e}")
-        print(f"📄 File content preview: {content[:200] if 'content' in locals() else 'No content'}")
+        print(f"Error converting REMI to MIDI: {e}")
+        print(f"File content preview: {content[:200] if 'content' in locals() else 'No content'}")
         raise
 
 def create_simple_midi_fallback(output_midi_path: str):
@@ -106,8 +106,8 @@ def create_simple_midi_fallback(output_midi_path: str):
         
         midi.instruments.append(piano)
         midi.dump(output_midi_path)
-        print(f"🎹 Created fallback MIDI: {output_midi_path}")
+        print(f"Created fallback MIDI: {output_midi_path}")
         return True
     except Exception as e:
-        print(f"❌ Fallback MIDI creation failed: {e}")
+        print(f"Fallback MIDI creation failed: {e}")
         return False

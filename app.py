@@ -2,10 +2,13 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
 import uuid
-from utils.token_processor import extract_tokens, process_transformer_output
+import subprocess
+import sys
+from utils.token_processor import extract_tokens, process_transformer_output, clean_transformer_output
 from lyrics_emotion import detect_emotion_from_text, load_emotion_models
 from remi2midi import convert_remi_to_midi
 from midi2audio import convert_midi_to_audio
+from music_infrence import run_inference, MusicGenerator
 
 app = Flask(__name__)
 CORS(app)
@@ -73,7 +76,7 @@ class MusicGenerator:
         
         # Save emotion
         with open(f'temp_files/emotion_{session_id}.txt', 'w', encoding='utf-8') as f:
-            f.write(f"Emotion: {emotion} Confidence: {confidence:.2f}")
+            f.write(f"Emotion_{emotion} Confidence_{confidence:.2f}")
         
         return {
             "step": "emotion_extracted",
@@ -91,66 +94,160 @@ class MusicGenerator:
         with open(f'temp_files/tokens_{session_id}.txt', 'r', encoding='utf-8') as f:
             tokens_lines = f.readlines()
         
-        # Combine
-        combined_content = emotion_line + '\n' + ''.join(tokens_lines)
+        # Combine - create prompt for transformer
+        # Format: Emotion_joy Confidence_0.57 [GENRE_ELECTRONIC] [INSTRUMENT_SYNTH_LEAD] ...
+        combined_content = emotion_line + ' ' + ''.join(tokens_lines).replace('\n', ' ')
         
         with open(f'temp_files/emotion_tokens_{session_id}.txt', 'w', encoding='utf-8') as f:
             f.write(combined_content)
         
         return {"step": "emotion_tokens_combined"}
     
+
     def feed_transformer(self, data, session_id):
-        """Step 5: Feed to transformer"""
-        # Read combined emotion and tokens
         with open(f'temp_files/emotion_tokens_{session_id}.txt', 'r', encoding='utf-8') as f:
-            emotion_tokens = f.read()
+            emotion_tokens = f.read().strip()
+    
+    # Parse tokens
+        prompt_tokens = []
+        parts = emotion_tokens.split()
+    
+        for part in parts:
+            part = part.strip()
+            if  part:
+            # Clean up
+                if part.startswith('"') and part.endswith('"'):
+                    part = part[1:-1]
+                elif part.startswith("'") and part.endswith("'"):
+                    part = part[1:-1]
+            
+            # Only add valid tokens
+                if any(x in part for x in ['Emotion_', 'Confidence_', '[', ']']):
+                    prompt_tokens.append(part)
+    
+        print(f"🎵 Running inference with {len(prompt_tokens)} prompt tokens")
+        print(f"Sample tokens: {prompt_tokens[:5]}")
+    
+        output_file = f'temp_files/transformer_output_{session_id}.txt'
+    
+        try:
+        # Use the single-file inference module I provided
+            from music_infrence import run_inference
         
-        # This is where you'll integrate with your actual transformer model
-        # For demo, using the example output you provided but incorporating actual emotion
-        emotion = data.get('emotion', 'sadness')  # From previous step
-        confidence = data.get('confidence', 1.00)
+            print("📊 Starting transformer inference...")
+            out_tokens, _ = run_inference(
+            prompt_tokens=prompt_tokens,
+            output_file=output_file,
+            max_new_tokens=2000
+        )
         
-        # Better mock output with proper REMI tokens
-        demo_output = f"""
-    Emotion: {emotion} Confidence: {confidence:.2f}
-    [GENRE_JAZZ] [KEY_C_MINOR] [INSTRUMENT_PIANO] [INSTRUMENT_SAXOPHONE] [INSTRUMENT_BASS] [TEMPO_SLOW]
-    Bar_Start TimeSig_4/4 Position_0 Tempo_80.0 
-    Program_0 Pitch_60 Velocity_80 Duration_1.0
-    Position_480 Program_0 Pitch_64 Velocity_75 Duration_1.0
-    Position_960 Program_0 Pitch_67 Velocity_70 Duration_1.0
-    Bar_End
-    """
+            print(f"✅ Inference completed successfully - {len(out_tokens)} tokens")
+        
+        except Exception as e:
+            print(f"❌ Error in inference: {e}")
+            import traceback
+            traceback.print_exc()
+            return self.fallback_transformer_output(data, session_id)
+    
+        return {"step": "transformer_fed"}
+
+    def fallback_transformer_output(self, data, session_id):
+        """Fallback transformer output for demo/testing"""
+        emotion = data.get('emotion', 'joy')
+        confidence = data.get('confidence', 0.57)
+        
+        # Use the actual format from your transformer output
+        demo_output = f"""<BOS> Emotion_{emotion} Confidence_{confidence:.2f} [GENRE_{data['genre'].upper()}] [KEY_{data['key'].upper()}] [INSTRUMENT_PIANO] [TEMPO_{data['tempo'].upper()}] <SEP> Bar_Start TimeSig_4/4 Position_0 Tempo_120.0 Bar_None TimeSig_4/4 Position_0 Program_0 Pitch_60 Velocity_80 Duration_1.0 Position_480 Program_0 Pitch_64 Velocity_75 Duration_1.0 Position_960 Program_0 Pitch_67 Velocity_70 Duration_1.0 Bar_End"""
         
         # Save transformer output
-        with open(f'temp_files/transformer_output_{session_id}.txt', 'w', encoding='utf-8') as f:
+        output_file = f'temp_files/transformer_output_{session_id}.txt'
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write(demo_output)
         
+        print(f"⚠️ Using fallback transformer output for {session_id}")
         return {"step": "transformer_fed"}
     
     def process_transformer_output(self, data, session_id):
-        """Step 6: Process transformer output and convert to REMI"""
-        with open(f'temp_files/transformer_output_{session_id}.txt', 'r', encoding='utf-8') as f:
+        """Step 6: Process transformer output and convert to clean REMI"""
+        input_file = f'temp_files/transformer_output_{session_id}.txt'
+        
+        with open(input_file, 'r', encoding='utf-8') as f:
             transformer_output = f.read()
         
-        # Process and extract REMI tokens
+        print(f"Original transformer output length: {len(transformer_output)} chars")
+        
+        # Clean and extract REMI tokens
         remi_tokens = process_transformer_output(transformer_output)
         
+        print(f"Cleaned REMI tokens length: {len(remi_tokens)} chars")
+        print(f"Sample REMI tokens: {remi_tokens[:200]}...")
+        
         # Save REMI tokens
-        with open(f'temp_files/remi_{session_id}.txt', 'w', encoding='utf-8') as f:
+        remi_file = f'temp_files/remi_{session_id}.txt'
+        with open(remi_file, 'w', encoding='utf-8') as f:
             f.write(remi_tokens)
         
         return {"step": "remi_converted"}
     
     def convert_to_midi(self, data, session_id):
-        """Step 7: Convert REMI to MIDI using your r1_remi2midi.py"""
+        """Step 7: Convert REMI to MIDI"""
         remi_path = f'temp_files/remi_{session_id}.txt'
         midi_path = f'output/midi/output_{session_id}.mid'
         
         try:
+            print(f"Converting REMI to MIDI: {remi_path} -> {midi_path}")
+            
+            # Check if remi file exists and has content
+            if not os.path.exists(remi_path):
+                raise FileNotFoundError(f"REMI file not found: {remi_path}")
+            
+            with open(remi_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                if not content.strip():
+                    raise ValueError("REMI file is empty")
+            
             convert_remi_to_midi(remi_path, midi_path)
-            return {"step": "midi_created"}
+            
+            # Check if MIDI was created
+            if os.path.exists(midi_path):
+                print(f"✅ MIDI created successfully: {midi_path}")
+                return {"step": "midi_created"}
+            else:
+                raise Exception("MIDI file was not created")
+                
         except Exception as e:
-            return {"step": "midi_conversion_failed", "error": str(e)}
+            print(f"❌ Error converting to MIDI: {e}")
+            # Try to create a simple MIDI as fallback
+            try:
+                self.create_fallback_midi(session_id)
+                return {"step": "midi_created_fallback"}
+            except Exception as e2:
+                return {"step": "midi_conversion_failed", "error": str(e)}
+    
+    def create_fallback_midi(self, session_id):
+        """Create a simple fallback MIDI"""
+        from miditoolkit import MidiFile, Instrument, Note
+        
+        midi_path = f'output/midi/output_{session_id}.mid'
+        midi = MidiFile()
+        
+        # Create piano track
+        piano = Instrument(program=0, is_drum=False, name="Piano")
+        
+        # Add a simple C major chord
+        notes = [
+            Note(start=0, end=480, pitch=60, velocity=80),  # C
+            Note(start=0, end=480, pitch=64, velocity=80),  # E
+            Note(start=0, end=480, pitch=67, velocity=80),  # G
+            Note(start=480, end=960, pitch=62, velocity=75),  # D
+            Note(start=480, end=960, pitch=65, velocity=75),  # F
+            Note(start=480, end=960, pitch=69, velocity=75),  # A
+        ]
+        
+        piano.notes.extend(notes)
+        midi.instruments.append(piano)
+        midi.dump(midi_path)
+        print(f"🟡 Created fallback MIDI: {midi_path}")
     
     def convert_to_audio(self, data, session_id):
         """Step 8: Convert MIDI to audio"""
@@ -158,13 +255,25 @@ class MusicGenerator:
         audio_path = f'output/audio/output_{session_id}.wav'
         
         try:
+            print(f"Converting MIDI to audio: {midi_path} -> {audio_path}")
+            
+            if not os.path.exists(midi_path):
+                raise FileNotFoundError(f"MIDI file not found: {midi_path}")
+            
             convert_midi_to_audio(midi_path, audio_path)
-            return {"step": "audio_created"}
+            
+            if os.path.exists(audio_path):
+                print(f"✅ Audio created successfully: {audio_path}")
+                return {"step": "audio_created"}
+            else:
+                raise Exception("Audio file was not created")
+                
         except Exception as e:
+            print(f"❌ Error converting to audio: {e}")
             return {"step": "audio_conversion_failed", "error": str(e)}
 
     def cleanup_temp_files(self, session_id):
-        """ Remove temporary session files created in temp_files/ for the given session_id. """
+        """Remove temporary session files"""
         filenames = [
             f'temp_files/lyrics_{session_id}.txt',
             f'temp_files/tokens_{session_id}.txt',
@@ -172,14 +281,15 @@ class MusicGenerator:
             f'temp_files/emotion_tokens_{session_id}.txt',
             f'temp_files/transformer_output_{session_id}.txt',
             f'temp_files/remi_{session_id}.txt',
+            f'temp_files/prompt_{session_id}.txt',
         ]
         for fp in filenames:
             try:
                 if os.path.exists(fp):
                     os.remove(fp)
             except Exception as e:
-                # Keep this simple: print a short notice (won't interrupt cleanup)
                 print(f"Warning: failed to remove {fp}: {e}")
+
 
 @app.route('/generate-music', methods=['POST'])
 def generate_music():
@@ -307,7 +417,7 @@ def test_remi_conversion():
         session_id = "test_session_123"
         
         # Make sure your remi.txt file is in the same directory as app.py
-        remi_source_file = "remi2tst/ed.txt"
+        remi_source_file = "remi2tst/generated_music_fixed.txt"
         
         if not os.path.exists(remi_source_file):
             print(f"❌ REMI file not found: {remi_source_file}")

@@ -12,11 +12,13 @@ def convert_midi_to_audio(midi_path, audio_output_path, use_fallback=True):
 
     # --- 1. Locate SoundFont ----------------------------------------------------
     soundfont_candidates = [
-        "/usr/share/sounds/sf2/FluidR3_GM.sf2",
-        "/usr/share/soundfonts/FluidR3_GM.sf2",
-        "/usr/share/sounds/sf2/default.sf2",
         # "./FluidR3_GM.sf2",
+        # "./MuseScore_General.sf2",
+        # "./MuseScore_General.sf3",
+        # "./Arachno.sf2",
+        # "./GeneralUserGS.sf3",
         "./GeneralUser-GS.sf2"
+
     ]
 
     soundfont_path = next((p for p in soundfont_candidates if os.path.exists(p)), None)
